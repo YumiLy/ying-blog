@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { useEffect, useState } from "react";
+import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L, { LatLngExpression } from "leaflet";
 import Image from "next/image";
 
@@ -26,7 +26,7 @@ const CITIES: City[] = [
     name: "Paris, France",
     emoji: "📍",
     position: [48.8566, 2.3522],
-    photos: [], // 还没放图可以先留空
+    photos: [],
     blurb: "Home base. Cafés, libraries, and long walks by the Seine.",
   },
   {
@@ -62,22 +62,23 @@ const CITIES: City[] = [
   },
 ];
 
+/** 用 useMap 自动框住所有点（替代 ref/whenCreated） */
+function FitAllBounds({ points }: { points: [number, number][] }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!points.length) return;
+    const bounds = L.latLngBounds(points);
+    map.fitBounds(bounds, { padding: [40, 40] });
+  }, [map, points]);
+  return null;
+}
+
 export default function MapGallery() {
   const [selected, setSelected] = useState<City | null>(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [idx, setIdx] = useState(0);
 
-  const mapRef = useRef<L.Map | null>(null);
-  const center = useMemo<LatLngExpression>(() => [48.86, 2.35], []);
-
-  // 自动框住全部城市
-  useEffect(() => {
-    if (!mapRef.current) return;
-    const bounds = L.latLngBounds(CITIES.map(c => c.position as [number, number]));
-    mapRef.current.fitBounds(bounds, { padding: [40, 40] });
-  }, []);
-
-  // 轻量键盘控制 Lightbox
+  // 键盘控制 Lightbox
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!lightboxOpen || !selected) return;
@@ -93,16 +94,16 @@ export default function MapGallery() {
     setSelected(c);
     if (c.photos.length) {
       setIdx(0);
-      setLightboxOpen(true); // 点击📍直接以“中间展开”的方式看第一张
+      setLightboxOpen(true);
     }
   };
 
   return (
     <section id="map" className="mx-auto max-w-6xl grid md:grid-cols-[1fr_380px] gap-4">
+      {/* 地图 */}
       <div className="h-[70vh] rounded-xl overflow-hidden border relative z-0">
         <MapContainer
-          whenCreated={(m) => (mapRef.current = m)}
-          center={center}
+          center={[48.86, 2.35]}   // 初始值，不重要，后面会 fitBounds
           zoom={5}
           style={{ height: "100%", width: "100%" }}
         >
@@ -110,6 +111,9 @@ export default function MapGallery() {
             attribution="&copy; OpenStreetMap &copy; CARTO"
             url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
           />
+          {/* 自动框住所有城市 */}
+          <FitAllBounds points={CITIES.map(c => c.position as [number, number])} />
+
           {CITIES.map((c) => (
             <Marker
               key={c.id}
@@ -123,6 +127,7 @@ export default function MapGallery() {
         </MapContainer>
       </div>
 
+      {/* 侧栏缩略图（给 fill 一个相对容器 + 固定比例） */}
       <aside className="border rounded-xl p-4 space-y-3">
         {selected ? (
           <>
@@ -134,13 +139,15 @@ export default function MapGallery() {
               <div className="grid grid-cols-2 gap-2">
                 {selected.photos.map((p, i) => (
                   <button key={p} onClick={() => { setIdx(i); setLightboxOpen(true); }}>
-                    <Image
-                      src={p}
-                      alt={`${selected.name} ${i+1}`}
-                      fill
-                      className="object-cover rounded-lg"
-                      sizes="(max-width: 768px) 50vw, 180px"
-                    />
+                    <div className="relative w-full aspect-[4/3]">
+                      <Image
+                        src={p}
+                        alt={`${selected.name} ${i+1}`}
+                        fill
+                        className="object-cover rounded-lg"
+                        sizes="(max-width: 768px) 50vw, 180px"
+                      />
+                    </div>
                   </button>
                 ))}
               </div>
@@ -151,7 +158,7 @@ export default function MapGallery() {
         )}
       </aside>
 
-      {/* Lightbox：从中间展开 */}
+      {/* Lightbox */}
       {lightboxOpen && selected && (
         <div
           className="fixed inset-0 z-[10000] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
@@ -165,12 +172,14 @@ export default function MapGallery() {
               <div className="font-medium">{selected.name}</div>
               <button className="opacity-80 hover:opacity-100" onClick={() => setLightboxOpen(false)}>✕</button>
             </div>
+
+            {/* 大图：fill + object-contain，横竖都不溢出 */}
             <div className="relative w-full h-[70vh] bg-black">
               <Image
                 src={selected.photos[idx]}
                 alt={`${selected.name} ${idx+1}`}
-                fill // 关键：让 Image 填充容器
-                className="object-contain" // 关键：等比完整展示（不裁切）
+                fill
+                className="object-contain"
                 sizes="(max-width: 1024px) 100vw, 960px"
                 priority
               />
@@ -188,19 +197,20 @@ export default function MapGallery() {
                 ›
               </button>
             </div>
-            {/* 缩略图条 */}
+
+            {/* 缩略图条：统一 4:3 比例 */}
             <div className="p-3 bg-black">
               <div className="flex gap-2 overflow-x-auto">
                 {selected.photos.map((p, i) => (
                   <button key={p} onClick={() => setIdx(i)} className="shrink-0">
                     <div className={`relative w-40 aspect-[4/3] rounded ${i===idx ? "ring-2 ring-white" : ""}`}>
-                        <Image
-                         src={p}
-                         alt={`thumb ${i+1}`}
-                         fill
-                         className="object-cover rounded"
-                         sizes="160px"
-                        />
+                      <Image
+                        src={p}
+                        alt={`thumb ${i+1}`}
+                        fill
+                        className="object-cover rounded"
+                        sizes="160px"
+                      />
                     </div>
                   </button>
                 ))}
