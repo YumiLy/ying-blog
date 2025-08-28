@@ -101,7 +101,7 @@ export default function MapGallery() {
     <section id="map" className="mx-auto max-w-6xl grid md:grid-cols-[1fr_380px] gap-4">
       <div className="h-[70vh] rounded-xl overflow-hidden border relative z-0">
         <MapContainer
-          ref={(m) => (mapRef.current = m)}
+          whenCreated={(m) => (mapRef.current = m)}
           center={center}
           zoom={5}
           style={{ height: "100%", width: "100%" }}
